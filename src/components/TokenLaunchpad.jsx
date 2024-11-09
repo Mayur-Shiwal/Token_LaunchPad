@@ -1,37 +1,57 @@
-import { createInitializeMint2Instruction, getMinimumBalanceForRentExemptMint, MINT_SIZE, TOKEN_PROGRAM_ID } from "@solana/spl-token"
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { Keypair, SystemProgram, Transaction } from "@solana/web3.js";
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { TOKEN_2022_PROGRAM_ID, getMintLen, createInitializeMetadataPointerInstruction, createInitializeMintInstruction, TYPE_SIZE, LENGTH_SIZE, ExtensionType } from "@solana/spl-token"
+import { createInitializeInstruction, pack } from '@solana/spl-token-metadata';
+
 
 export function TokenLaunchpad() {
-
+    const { connection } = useConnection();
     const wallet = useWallet();
-    const connection = useConnection();
-    async function createToken(){
-        const name = document.getElementById("name").value;
-        const symbol = document.getElementById("symbol").value;
-        const image = document.getElementById("image").value;
-        const supply = document.getElementById("supply").value;
+    async function createToken() {
+        const mintKeypair = Keypair.generate();
+        const metadata = {
+            mint: mintKeypair.publicKey,
+            name: 'KIRA',
+            symbol: 'KIR    ',
+            uri: 'https://cdn.100xdevs.com/metadata.json',
+            additionalMetadata: [],
+        };
 
-        // createMint();
+        const mintLen = getMintLen([ExtensionType.MetadataPointer]);
+        const metadataLen = TYPE_SIZE + LENGTH_SIZE + pack(metadata).length;
 
-        const lamports = await getMinimumBalanceForRentExemptMint(connection);
-        const keypair = Keypair.generate();
-        const transaction = new Transaction().add(SystemProgram.createAccount({
-            fromPubkey: wallet.publicKey,
-            newAccountPubkey: keypair.publicKey,
-            space: MINT_SIZE,
-            lamports,
-            programId: TOKEN_PROGRAM_ID,
-        }),
-        createInitializeMint2Instruction(keypair.publicKey, 6, wallet.publicKey, wallet.publicKey, programId)
-    );
+        const lamports = await connection.getMinimumBalanceForRentExemption(mintLen + metadataLen);
 
-    transaction.partialSign(keypair);
-    let response = wallet.sendTransaction(transaction, connection);
-    console.log(response);
-}
+        const transaction = new Transaction().add(
+            SystemProgram.createAccount({
+                fromPubkey: wallet.publicKey,
+                newAccountPubkey: mintKeypair.publicKey,
+                space: mintLen,
+                lamports,
+                programId: TOKEN_2022_PROGRAM_ID,
+            }),
+            createInitializeMetadataPointerInstruction(mintKeypair.publicKey, wallet.publicKey, mintKeypair.publicKey, TOKEN_2022_PROGRAM_ID),
+            createInitializeMintInstruction(mintKeypair.publicKey, 9, wallet.publicKey, null, TOKEN_2022_PROGRAM_ID),
+            createInitializeInstruction({
+                programId: TOKEN_2022_PROGRAM_ID,
+                mint: mintKeypair.publicKey,
+                metadata: mintKeypair.publicKey,
+                name: metadata.name,
+                symbol: metadata.symbol,
+                uri: metadata.uri,
+                mintAuthority: wallet.publicKey,
+                updateAuthority: wallet.publicKey,
+            }),
+        );
+            
+        transaction.feePayer = wallet.publicKey;
+        transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+        transaction.partialSign(mintKeypair);
 
-    return  <div style={{
+        await wallet.sendTransaction(transaction, connection);
+    }
+
+    return <div style={{
         height: '100vh',
         display: 'flex',
         justifyContent: 'center',
@@ -39,10 +59,10 @@ export function TokenLaunchpad() {
         flexDirection: 'column'
     }}>
         <h1>Solana Token Launchpad</h1>
-        <input id="name" className='inputText' type='text' placeholder='Name'></input> <br />
-        <input id="symbol" className='inputText' type='text' placeholder='Symbol'></input> <br />
-        <input id="image" className='inputText' type='text' placeholder='Image URL'></input> <br />
-        <input id="supply" className='inputText' type='text' placeholder='Initial Supply'></input> <br />
+        <input className='inputText' type='text' placeholder='Name'></input> <br />
+        <input className='inputText' type='text' placeholder='Symbol'></input> <br />
+        <input className='inputText' type='text' placeholder='Image URL'></input> <br />
+        <input className='inputText' type='text' placeholder='Initial Supply'></input> <br />
         <button onClick={createToken} className='btn'>Create a token</button>
     </div>
 }
